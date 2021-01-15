@@ -3027,7 +3027,8 @@ out:
 
 static int fg_get_cycle_count(struct fg_chip *chip)
 {
-	int count;
+	int count = 0;
+	int i = 0;
 
 	if (!chip->cyc_ctr.en)
 		return 0;
@@ -3036,9 +3037,33 @@ static int fg_get_cycle_count(struct fg_chip *chip)
 		return -EINVAL;
 
 	mutex_lock(&chip->cyc_ctr.lock);
-	count = chip->cyc_ctr.count[chip->cyc_ctr.id - 1];
+	for (i = 0; i < BUCKET_COUNT; i++)
+		count += chip->cyc_ctr.count[i];
+	count /= BUCKET_COUNT;
 	mutex_unlock(&chip->cyc_ctr.lock);
 	return count;
+}
+
+static int fg_set_cycle_count(struct fg_chip *chip, int value)
+{
+		 int rc = 0;
+		 int i = 0;
+		 int address;
+		 u8 data[2];
+
+		 for (i = 0; i < BUCKET_COUNT; i++) {
+				data[0] = value & 0xFF;
+				data[1] = value >> 8;
+
+		address = BATT_CYCLE_NUMBER_REG + i * 2;
+				rc = fg_mem_write(chip, data, address, 2, BATT_CYCLE_OFFSET, 0);
+				if (rc < 0)
+						pr_err("failed to write BATT_CYCLE[%d] rc=%d\n",
+								i, rc);
+				else
+						chip->cyc_ctr.count[i] = value;
+		 }
+		 return rc;
 }
 
 static void half_float_to_buffer(int64_t uval, u8 *buffer)
@@ -3718,11 +3743,11 @@ static void fg_cap_learning_post_process(struct fg_chip *chip)
 		return;
 	}
 
-	max_inc_val = chip->learning_data.learned_cc_uah
+	max_inc_val = (int64_t)chip->learning_data.learned_cc_uah
 			* (1000 + chip->learning_data.max_increment);
 	do_div(max_inc_val, 1000);
 
-	min_dec_val = chip->learning_data.learned_cc_uah
+	min_dec_val = (int64_t)chip->learning_data.learned_cc_uah
 			* (1000 - chip->learning_data.max_decrement);
 	do_div(min_dec_val, 1000);
 
@@ -4785,6 +4810,10 @@ static int fg_power_set_property(struct power_supply *psy,
 			schedule_work(&chip->set_resume_soc_work);
 		}
 		break;
+	case POWER_SUPPLY_PROP_CYCLE_COUNT:
+				rc = fg_set_cycle_count(chip, val->intval);
+				pr_info("Cycle count is modified to %d by userspace\n", val->intval);
+				break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNT_ID:
 		if ((val->intval > 0) && (val->intval <= BUCKET_COUNT)) {
 			chip->cyc_ctr.id = val->intval;
@@ -4824,6 +4853,7 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_COOL_TEMP:
 	case POWER_SUPPLY_PROP_WARM_TEMP:
 	case POWER_SUPPLY_PROP_CYCLE_COUNT_ID:
+	case POWER_SUPPLY_PROP_CYCLE_COUNT:
 	case POWER_SUPPLY_PROP_BATTERY_INFO:
 	case POWER_SUPPLY_PROP_BATTERY_INFO_ID:
 		return 1;
