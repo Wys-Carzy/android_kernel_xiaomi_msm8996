@@ -626,11 +626,21 @@ KBUILD_AFLAGS	+= $(call cc-option,-fno-PIE)
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
-ifeq ($(cc-name),clang)
-KBUILD_CFLAGS	+= -march=armv8-a -mcpu=kryo -mtune=kryo
-endif
 else
 KBUILD_CFLAGS	+= -O2
+ifeq ($(cc-name),clang)
+#优化Polly
+KBUILD_CFLAGS	+= -march=armv8-a -mcpu=kryo -mtune=kryo
+KBUILD_CFLAGS	+= $(call cc-option, -mllvm -polly) \
+		   $(call cc-option, -mllvm -polly-run-dce) \
+		   $(call cc-option, -mllvm -polly-run-inliner) \
+		   $(call cc-option, -mllvm -polly-opt-fusion=max) \
+		   $(call cc-option, -mllvm -polly-ast-use-context) \
+		   $(call cc-option, -mllvm -polly-detect-keep-going) \
+		   $(call cc-option, -mllvm -polly-vectorizer=stripmine) \
+		   $(call cc-option, -mllvm -polly-invariant-load-hoisting)
+KBUILD_AFLAGS	+= -march=armv8-a -mcpu=kryo -mtune=kryo
+endif
 endif
 
 ifdef CONFIG_CC_WERROR
@@ -702,17 +712,6 @@ KBUILD_CFLAGS += -Wno-tautological-compare
 # source of a reference will be _MergedGlobals and not on of the whitelisted names.
 # See modpost pattern 2
 KBUILD_CFLAGS += -mno-global-merge
-#优化Polly
-KBUILD_LDFLAGS += -m $(SRCARCH)
-KBUILD_AFLAGS += -mtune=kryo -mcpu=kryo
-KBUILD_CFLAGS += $(call cc-option, -mllvm -polly) \
-		   $(call cc-option, -mllvm -polly-run-dce) \
-		   $(call cc-option, -mllvm -polly-run-inliner) \
-		   $(call cc-option, -mllvm -polly-opt-fusion=max) \
-		   $(call cc-option, -mllvm -polly-ast-use-context) \
-		   $(call cc-option, -mllvm -polly-detect-keep-going) \
-		   $(call cc-option, -mllvm -polly-vectorizer=stripmine) \
-		   $(call cc-option, -mllvm -polly-invariant-load-hoisting)
 else
 # These warnings generated too much noise in a regular build.
 # Use make W=1 to enable them (see scripts/Makefile.extrawarn)
